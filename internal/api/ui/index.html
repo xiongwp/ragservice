@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG 控制台</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #fff; --text: #1d2129; --muted: #6b7280; --line: #e5e7eb;
+  --accent: #2563eb; --accent-text: #fff; --danger: #dc2626; --ok: #16a34a; --warn: #d97706;
+  --code: #f3f4f6; --radius: 8px;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1115; --panel: #171a21; --text: #e5e7eb; --muted: #9ca3af; --line: #2a2f3a;
+    --accent: #3b82f6; --code: #1f2430; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg); color: var(--text); }
+header { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 20px;
+  background: var(--panel); border-bottom: 1px solid var(--line); }
+header h1 { font-size: 16px; margin: 0 12px 0 0; }
+header .who { color: var(--muted); margin-left: auto; }
+nav { display: flex; gap: 4px; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
+nav button { border: 0; background: none; padding: 10px 14px; color: var(--muted); border-bottom: 2px solid transparent; border-radius: 0; }
+nav button.active { color: var(--text); border-bottom-color: var(--accent); }
+main { padding: 20px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+.panel h2 { font-size: 15px; margin: 0 0 12px; }
+.grid { display: grid; grid-template-columns: 300px 1fr; gap: 16px; }
+@media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+input, select, textarea, button { font: inherit; color: inherit; }
+input, select, textarea { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+textarea { width: 100%; min-height: 64px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+button { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+button.danger { color: var(--danger); }
+button:disabled { opacity: .5; cursor: default; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.row label { color: var(--muted); }
+.list { list-style: none; margin: 0; padding: 0; }
+.list li { padding: 8px 10px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+.list li:hover { background: var(--code); }
+.list li.active { background: var(--code); font-weight: 600; }
+.muted { color: var(--muted); }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td.actions { white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; }
+.table-wrap { overflow-x: auto; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; border: 1px solid currentColor; }
+.badge.completed { color: var(--ok); } .badge.failed { color: var(--danger); }
+.badge.processing, .badge.queued, .badge.retrying { color: var(--warn); }
+code, .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: var(--code); padding: 1px 4px; border-radius: 4px; }
+.hit { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin-bottom: 10px; }
+.hit .meta { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.hit .content { white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; }
+.toast { position: fixed; right: 20px; bottom: 20px; max-width: 420px; padding: 10px 14px; border-radius: 6px;
+  background: var(--text); color: var(--bg); opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: .95; }
+.secret { padding: 10px; border: 1px dashed var(--warn); border-radius: 6px; margin-top: 8px; word-break: break-all; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.stat { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+.stat .v { font-size: 22px; font-weight: 600; }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>RAG 控制台</h1>
+  <input id="key" type="password" placeholder="API Key" size="34" autocomplete="off">
+  <button id="connect" class="primary">连接</button>
+  <span id="tenantSwitch" class="hidden"><label class="muted">租户</label> <select id="tenantSelect"></select></span>
+  <span class="who" id="who">未连接</span>
+</header>
+<nav id="tabs">
+  <button data-tab="datasets" class="active">知识库</button>
+  <button data-tab="search">检索测试</button>
+  <button data-tab="usage">用量</button>
+  <button data-tab="keys" data-role="admin">API Keys</button>
+  <button data-tab="tenants" data-role="root">租户</button>
+</nav>
+<main>
+  <section id="tab-datasets">
+    <div class="grid">
+      <div>
+        <div class="panel">
+          <h2>知识库</h2>
+          <ul class="list" id="datasetList"></ul>
+        </div>
+        <div class="panel" data-role="editor">
+          <h2>新建知识库</h2>
+          <div class="row"><input id="dsName" placeholder="名称" style="flex:1"></div>
+          <div class="row"><input id="dsDesc" placeholder="描述（可选）" style="flex:1"></div>
+          <div class="row"><label>父块 token</label><input id="dsParent" type="number" placeholder="800" style="width:80px">
+            <label>子块 token</label><input id="dsChild" type="number" placeholder="200" style="width:80px"></div>
+          <div class="row"><label><input id="dsContextual" type="checkbox"> Contextual Retrieval（需配置 LLM）</label></div>
+          <button id="createDataset" class="primary">创建</button>
+        </div>
+      </div>
+      <div id="datasetDetail" class="panel">
+        <h2>请先连接</h2>
+        <p class="muted">在顶部输入 API Key 后点「连接」。首次使用请用 root key（部署目录 .env 中的 RAG_API_KEYS），
+          登录后可在「API Keys」页为 Dify 和同事创建权限更小的 Key。</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-search" class="hidden">
+    <div class="panel">
+      <h2>检索测试</h2>
+      <div class="row" id="searchDatasets"></div>
+      <div class="row"><input id="q" placeholder="输入问题" style="flex:1;min-width:240px">
+        <label>Top K</label><input id="topk" type="number" value="5" style="width:64px">
+        <label>阈值</label><input id="threshold" type="number" step="0.05" value="0" style="width:72px">
+        <button id="runSearch" class="primary">检索</button></div>
+      <details><summary class="muted">元数据过滤（Dify metadata_condition 格式）</summary>
+        <textarea id="filter" placeholder='{"logical_operator":"and","conditions":[{"name":"dept","comparison_operator":"is","value":"hr"}]}'></textarea>
+      </details>
+    </div>
+    <div id="searchResults"></div>
+  </section>
+
+  <section id="tab-usage" class="hidden">
+    <div class="panel"><h2>用量与配额</h2><div class="stats" id="usageStats"></div></div>
+    <div class="panel"><h2>服务配置</h2><div id="features" class="muted"></div></div>
+  </section>
+
+  <section id="tab-keys" class="hidden">
+    <div class="panel">
+      <h2>新建 API Key</h2>
+      <div class="row"><input id="keyName" placeholder="用途，例如 dify-prod">
+        <select id="keyRole"><option value="reader">reader：只读 + 检索</option><option value="editor">editor：管理知识库</option><option value="admin">admin：管理 Key</option></select>
+        <button id="createKey" class="primary">创建</button></div>
+      <div id="newKey"></div>
+    </div>
+    <div class="panel"><h2>当前租户的 Key</h2><div class="table-wrap"><table id="keyTable"></table></div></div>
+  </section>
+
+  <section id="tab-tenants" class="hidden">
+    <div class="panel">
+      <h2 id="tenantFormTitle">新建租户</h2>
+      <div class="row"><input id="tName" placeholder="名称">
+        <label>限流 rps</label><input id="tRps" type="number" step="1" value="0" style="width:80px">
+        <label>知识库上限</label><input id="tDs" type="number" value="0" style="width:80px">
+        <label>文档上限</label><input id="tDocs" type="number" value="0" style="width:80px">
+        <label>存储 MB</label><input id="tMb" type="number" value="0" style="width:90px"></div>
+      <div class="row"><span class="muted">0 表示不限制</span>
+        <button id="saveTenant" class="primary">保存</button><button id="resetTenant">清空</button></div>
+    </div>
+    <div class="panel"><h2>租户</h2><div class="table-wrap"><table id="tenantTable"></table></div></div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const state = { key: "", me: null, tenant: "", datasets: [], current: null, pollTimer: null, editingTenant: null };
+const roleRank = { reader: 1, editor: 2, admin: 3, root: 4 };
+
+function store(k, v) { try { v === undefined ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (_) {} }
+function load(k) { try { return localStorage.getItem(k) || ""; } catch (_) { return ""; } }
+
+function toast(msg, isError) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.style.background = isError ? "var(--danger)" : "";
+  t.classList.add("show");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove("show"), 3500);
+}
+
+// el builds DOM nodes; text always goes through textContent, never innerHTML.
+function el(tag, attrs, ...children) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") n.className = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (v !== undefined && v !== null && v !== false) n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of children.flat()) {
+    if (c === null || c === undefined || c === false) continue;
+    n.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return n;
+}
+
+async function api(method, path, body, isForm) {
+  const headers = { Authorization: "Bearer " + state.key };
+  if (state.tenant) headers["X-Tenant-ID"] = state.tenant;
+  let payload;
+  if (isForm) payload = body;
+  else if (body !== undefined) { headers["Content-Type"] = "application/json"; payload = JSON.stringify(body); }
+  const res = await fetch(path, { method, headers, body: payload });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (_) { data = { error: text }; }
+  if (!res.ok) throw new Error((data && (data.error || data.error_msg)) || res.status + " " + res.statusText);
+  return data;
+}
+
+function fmtBytes(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1 << 20) return (n / 1024).toFixed(1) + " KB";
+  if (n < 1 << 30) return (n / (1 << 20)).toFixed(1) + " MB";
+  return (n / (1 << 30)).toFixed(2) + " GB";
+}
+function fmtTime(s) { return s ? new Date(s).toLocaleString() : "—"; }
+function can(role) { return state.me && roleRank[state.me.role] >= roleRank[role]; }
+
+async function copy(text) {
+  try { await navigator.clipboard.writeText(text); toast("已复制"); } catch (_) { toast("复制失败，请手动选择", true); }
+}
+
+// ---- connect & tabs ----
+
+async function connect() {
+  state.key = $("key").value.trim();
+  if (!state.key) return toast("请输入 API Key", true);
+  try {
+    state.me = await api("GET", "/v1/whoami");
+  } catch (e) {
+    state.me = null;
+    $("who").textContent = "未连接";
+    return toast("连接失败：" + e.message, true);
+  }
+  store("rag.key", state.key);
+  $("who").textContent = state.me.tenant.name + " · " + state.me.role + (state.me.key_name ? " · " + state.me.key_name : "");
+  for (const n of document.querySelectorAll("[data-role]")) n.classList.toggle("hidden", !can(n.dataset.role));
+  if (can("root")) await loadTenantSwitch();
+  await refreshDatasets();
+}
+
+function showTab(name) {
+  for (const b of document.querySelectorAll("#tabs button")) b.classList.toggle("active", b.dataset.tab === name);
+  for (const s of document.querySelectorAll("main > section")) s.classList.toggle("hidden", s.id !== "tab-" + name);
+  if (!state.me) return;
+  if (name === "usage") loadUsage();
+  if (name === "keys") loadKeys();
+  if (name === "tenants") loadTenants();
+  if (name === "search") renderSearchDatasets();
+}
+
+// ---- datasets ----
+
+async function refreshDatasets() {
+  const res = await api("GET", "/v1/datasets");
+  state.datasets = res.data;
+  const list = $("datasetList");
+  list.replaceChildren();
+  if (!state.datasets.length) list.append(el("li", { class: "muted" }, "还没有知识库"));
+  for (const d of state.datasets) {
+    list.append(el("li", { class: state.current === d.id ? "active" : "", onclick: () => openDataset(d.id) },
+      el("span", {}, d.name), el("span", { class: "muted" }, d.document_count + " 篇")));
+  }
+  if (state.current && !state.datasets.find((d) => d.id === state.current)) state.current = null;
+  if (state.current) openDataset(state.current, true);
+  else $("datasetDetail").replaceChildren(el("p", { class: "muted" }, "选择左侧的知识库，或新建一个。"));
+}
+
+async function createDataset() {
+  const body = { name: $("dsName").value.trim(), description: $("dsDesc").value.trim(), chunk_config: {} };
+  if ($("dsParent").value) body.chunk_config.parent_tokens = Number($("dsParent").value);
+  if ($("dsChild").value) body.chunk_config.child_tokens = Number($("dsChild").value);
+  if ($("dsContextual").checked) body.chunk_config.contextual = true;
+  try {
+    const d = await api("POST", "/v1/datasets", body);
+    $("dsName").value = $("dsDesc").value = "";
+    state.current = d.id;
+    toast("已创建");
+    await refreshDatasets();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function openDataset(id, quiet) {
+  state.current = id;
+  for (const li of $("datasetList").children) li.classList.remove("active");
+  const idx = state.datasets.findIndex((d) => d.id === id);
+  if (idx >= 0 && $("datasetList").children[idx]) $("datasetList").children[idx].classList.add("active");
+  const ds = state.datasets.find((d) => d.id === id);
+  let docs;
+  try { docs = (await api("GET", "/v1/datasets/" + id + "/documents")).data; }
+  catch (e) { if (!quiet) toast(e.message, true); return; }
+
+  // Keep the list's document count in step (uploads may come from elsewhere).
+  ds.document_count = docs.length;
+  const li = $("datasetList").children[idx];
+  if (li && li.lastChild) li.lastChild.textContent = docs.length + " 篇";
+
+  const cc = ds.chunk_config || {};
+  const head = el("div", {},
+    el("h2", {}, ds.name),
+    ds.description ? el("p", { class: "muted" }, ds.description) : null,
+    el("div", { class: "row" }, el("label", {}, "知识库 ID（Dify 外部知识库 ID）"), el("code", {}, ds.id),
+      el("button", { onclick: () => copy(ds.id) }, "复制")),
+    el("div", { class: "row muted" },
+      "模型 " + ds.embedding_model + " · 父块 " + (cc.parent_tokens || "默认") + " · 子块 " + (cc.child_tokens || "默认") +
+      (cc.contextual ? " · Contextual Retrieval" : "")),
+    can("editor") ? el("div", { class: "row" },
+      el("button", { onclick: () => reindexDataset(id) }, "全部重建索引"),
+      el("button", { class: "danger", onclick: () => deleteDataset(ds) }, "删除知识库")) : null);
+
+  const upload = can("editor") ? el("div", { class: "panel" },
+    el("h2", {}, "上传文档"),
+    el("div", { class: "row" }, el("input", { type: "file", id: "files", multiple: true,
+      accept: ".txt,.md,.markdown,.html,.htm,.pdf,.docx,.pptx,.xlsx,.csv,.log" })),
+    el("textarea", { id: "uploadMeta", placeholder: '元数据（可选，JSON 对象），例如 {"dept":"hr","year":2024}' }),
+    el("div", { class: "row" }, el("button", { class: "primary", onclick: () => uploadFiles(id) }, "上传"))) : null;
+
+  const rows = docs.map((d) => el("tr", {},
+    el("td", {}, d.name, el("div", { class: "muted mono" }, JSON.stringify(d.metadata))),
+    el("td", {}, el("span", { class: "badge " + d.status }, d.status), d.stage ? el("div", { class: "muted" }, d.stage) : null,
+      d.error ? el("div", { class: "muted", title: d.error }, d.error.slice(0, 120)) : null),
+    el("td", {}, d.chunk_count), el("td", {}, fmtBytes(d.size_bytes)), el("td", { class: "muted" }, fmtTime(d.indexed_at || d.updated_at)),
+    el("td", { class: "actions" }, can("editor") ? [
+      el("button", { onclick: () => editMetadata(d) }, "元数据"), " ",
+      el("button", { onclick: () => reindexDoc(d.id) }, "重建"), " ",
+      el("button", { class: "danger", onclick: () => deleteDoc(d) }, "删除")] : null)));
+  const table = el("div", { class: "table-wrap" }, el("table", {},
+    el("thead", {}, el("tr", {}, ["文档", "状态", "分段", "大小", "更新", ""].map((h) => el("th", {}, h)))),
+    el("tbody", {}, rows.length ? rows : el("tr", {}, el("td", { colspan: 6, class: "muted" }, "暂无文档")))));
+
+  $("datasetDetail").replaceChildren(head, upload, el("h2", {}, "文档"), table);
+
+  clearTimeout(state.pollTimer);
+  if (docs.some((d) => ["queued", "processing", "retrying"].includes(d.status))) {
+    state.pollTimer = setTimeout(() => { if (state.current === id) openDataset(id, true); }, 2000);
+  }
+}
+
+async function uploadFiles(id) {
+  const files = $("files").files;
+  if (!files.length) return toast("请选择文件", true);
+  const meta = $("uploadMeta").value.trim();
+  if (meta) { try { JSON.parse(meta); } catch (_) { return toast("元数据不是合法 JSON", true); } }
+  let ok = 0, dup = 0;
+  for (const f of files) {
+    const form = new FormData();
+    form.append("file", f);
+    if (meta) form.append("metadata", meta);
+    try { const r = await api("POST", "/v1/datasets/" + id + "/documents", form, true); r.duplicate ? dup++ : ok++; }
+    catch (e) { toast(f.name + "：" + e.message, true); }
+  }
+  toast("已提交 " + ok + " 个" + (dup ? "，" + dup + " 个重复已跳过" : ""));
+  await refreshDatasets();
+}
+
+async function editMetadata(d) {
+  const text = prompt("编辑元数据（JSON 对象）。修改后只更新向量上的元数据，不会重新做 embedding。", JSON.stringify(d.metadata));
+  if (text === null) return;
+  let metadata;
+  try { metadata = JSON.parse(text); } catch (_) { return toast("不是合法 JSON", true); }
+  try { await api("PATCH", "/v1/documents/" + d.id, { metadata }); toast("已更新"); openDataset(state.current); }
+  catch (e) { toast(e.message, true); }
+}
+async function reindexDoc(id) {
+  try { await api("POST", "/v1/documents/" + id + "/reindex"); openDataset(state.current); } catch (e) { toast(e.message, true); }
+}
+async function reindexDataset(id) {
+  try { const r = await api("POST", "/v1/datasets/" + id + "/reindex"); toast("已排队 " + r.queued + " 篇"); openDataset(id); }
+  catch (e) { toast(e.message, true); }
+}
+async function deleteDoc(d) {
+  if (!confirm("删除文档「" + d.name + "」？")) return;
+  try { await api("DELETE", "/v1/documents/" + d.id); await refreshDatasets(); } catch (e) { toast(e.message, true); }
+}
+async function deleteDataset(ds) {
+  if (prompt("删除后无法恢复。输入知识库名称「" + ds.name + "」确认：") !== ds.name) return;
+  try { await api("DELETE", "/v1/datasets/" + ds.id); state.current = null; await refreshDatasets(); } catch (e) { toast(e.message, true); }
+}
+
+// ---- search ----
+
+function renderSearchDatasets() {
+  const box = $("searchDatasets");
+  box.replaceChildren(el("label", {}, "知识库："));
+  for (const d of state.datasets) {
+    box.append(el("label", {}, el("input", { type: "checkbox", value: d.id, checked: d.id === state.current || state.datasets.length === 1 }), " " + d.name));
+  }
+}
+
+async function runSearch() {
+  const ids = [...document.querySelectorAll("#searchDatasets input:checked")].map((i) => i.value);
+  if (!ids.length) return toast("至少选择一个知识库", true);
+  const body = { dataset_ids: ids, query: $("q").value, top_k: Number($("topk").value) || 5, score_threshold: Number($("threshold").value) || 0 };
+  const f = $("filter").value.trim();
+  if (f) { try { body.metadata_condition = JSON.parse(f); } catch (_) { return toast("过滤条件不是合法 JSON", true); } }
+  const out = $("searchResults");
+  out.replaceChildren(el("p", { class: "muted" }, "检索中…"));
+  try {
+    const r = await api("POST", "/v1/search", body);
+    out.replaceChildren(el("p", { class: "muted" }, r.results.length + " 条结果 · " + r.took_ms + " ms"));
+    r.results.forEach((h, i) => out.append(el("div", { class: "hit" },
+      el("div", { class: "meta" },
+        el("strong", {}, "#" + (i + 1) + " · " + h.score.toFixed(3)),
+        h.vector_rank ? el("span", {}, "向量排名 " + h.vector_rank) : el("span", {}, "向量未命中"),
+        h.keyword_rank ? el("span", {}, "关键词排名 " + h.keyword_rank) : el("span", {}, "关键词未命中"),
+        h.rerank_score !== undefined ? el("span", {}, "rerank " + h.rerank_score.toFixed(3)) : null,
+        el("span", {}, h.document_name), h.heading ? el("span", {}, h.heading) : null),
+      el("div", { class: "content" }, h.content))));
+  } catch (e) { out.replaceChildren(); toast(e.message, true); }
+}
+
+// ---- usage ----
+
+async function loadUsage() {
+  try {
+    const r = await api("GET", "/v1/usage");
+    const u = r.usage, l = r.limits;
+    const lim = (v, f) => (v ? " / " + (f ? f(v) : v) : " / 不限");
+    $("usageStats").replaceChildren(
+      el("div", { class: "stat" }, el("div", { class: "muted" }, "知识库"), el("div", { class: "v" }, u.datasets + lim(l.max_datasets))),
+      el("div", { class: "stat" }, el("div", { class: "muted" }, "文档"), el("div", { class: "v" }, u.documents + lim(l.max_documents))),
+      el("div", { class: "stat" }, el("div", { class: "muted" }, "存储"), el("div", { class: "v" }, fmtBytes(u.storage_bytes) + lim(l.max_storage_mb, (v) => v + " MB"))),
+      el("div", { class: "stat" }, el("div", { class: "muted" }, "分段"), el("div", { class: "v" }, u.chunks)),
+      el("div", { class: "stat" }, el("div", { class: "muted" }, "限流"), el("div", { class: "v" }, l.rate_limit_rps ? l.rate_limit_rps + " rps" : "不限")));
+    const f = state.me.features;
+    $("features").textContent = "检索模式 " + f.search_mode + " · rerank " + (f.rerank ? "开" : "关") + " · LLM " + (f.llm ? "开" : "关") +
+      " · query 改写 " + f.query_rewrite + " · embedding " + f.embedding_model + " · docling " + (f.docling ? "开" : "关");
+  } catch (e) { toast(e.message, true); }
+}
+
+// ---- keys ----
+
+async function loadKeys() {
+  try {
+    const keys = (await api("GET", "/v1/keys")).data;
+    $("keyTable").replaceChildren(
+      el("thead", {}, el("tr", {}, ["名称", "前缀", "角色", "创建", "最近使用", ""].map((h) => el("th", {}, h)))),
+      el("tbody", {}, keys.map((k) => el("tr", {},
+        el("td", {}, k.name), el("td", {}, el("code", {}, k.prefix + "…")), el("td", {}, k.role),
+        el("td", { class: "muted" }, fmtTime(k.created_at)), el("td", { class: "muted" }, fmtTime(k.last_used_at)),
+        el("td", {}, k.revoked_at ? el("span", { class: "muted" }, "已吊销") :
+          el("button", { class: "danger", onclick: () => revokeKey(k) }, "吊销"))))));
+  } catch (e) { toast(e.message, true); }
+}
+async function createKey() {
+  try {
+    const r = await api("POST", "/v1/keys", { name: $("keyName").value.trim(), role: $("keyRole").value });
+    $("keyName").value = "";
+    $("newKey").replaceChildren(el("div", { class: "secret" },
+      el("div", {}, "新 Key（只显示这一次，请立即保存）："), el("code", {}, r.key), " ",
+      el("button", { onclick: () => copy(r.key) }, "复制")));
+    loadKeys();
+  } catch (e) { toast(e.message, true); }
+}
+async function revokeKey(k) {
+  if (!confirm("吊销 Key「" + k.name + "」？使用它的服务会立即失去访问权限。")) return;
+  try { await api("DELETE", "/v1/keys/" + k.id); loadKeys(); } catch (e) { toast(e.message, true); }
+}
+
+// ---- tenants (root) ----
+
+async function loadTenantSwitch() {
+  const ts = (await api("GET", "/v1/admin/tenants")).data;
+  const sel = $("tenantSelect");
+  sel.replaceChildren(...ts.map((t) => el("option", { value: t.id, selected: t.id === state.me.tenant.id }, t.name)));
+  $("tenantSwitch").classList.remove("hidden");
+}
+async function switchTenant() {
+  state.tenant = $("tenantSelect").value;
+  state.current = null;
+  await connect();
+}
+async function loadTenants() {
+  try {
+    const ts = (await api("GET", "/v1/admin/tenants")).data;
+    $("tenantTable").replaceChildren(
+      el("thead", {}, el("tr", {}, ["名称", "ID", "限流", "知识库", "文档", "存储 MB", ""].map((h) => el("th", {}, h)))),
+      el("tbody", {}, ts.map((t) => el("tr", {},
+        el("td", {}, t.name), el("td", {}, el("code", {}, t.id)), el("td", {}, t.rate_limit_rps || "不限"),
+        el("td", {}, t.max_datasets || "不限"), el("td", {}, t.max_documents || "不限"), el("td", {}, t.max_storage_mb || "不限"),
+        el("td", {}, el("button", { onclick: () => editTenant(t) }, "编辑"))))));
+  } catch (e) { toast(e.message, true); }
+}
+function editTenant(t) {
+  state.editingTenant = t ? t.id : null;
+  $("tenantFormTitle").textContent = t ? "编辑租户" : "新建租户";
+  $("tName").value = t ? t.name : "";
+  $("tRps").value = t ? t.rate_limit_rps : 0;
+  $("tDs").value = t ? t.max_datasets : 0;
+  $("tDocs").value = t ? t.max_documents : 0;
+  $("tMb").value = t ? t.max_storage_mb : 0;
+}
+async function saveTenant() {
+  const body = { name: $("tName").value.trim(), rate_limit_rps: Number($("tRps").value), max_datasets: Number($("tDs").value),
+    max_documents: Number($("tDocs").value), max_storage_mb: Number($("tMb").value) };
+  try {
+    if (state.editingTenant) await api("PUT", "/v1/admin/tenants/" + state.editingTenant, body);
+    else await api("POST", "/v1/admin/tenants", body);
+    toast("已保存");
+    editTenant(null);
+    loadTenants();
+    loadTenantSwitch();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ---- wiring ----
+
+$("connect").addEventListener("click", connect);
+$("key").addEventListener("keydown", (e) => { if (e.key === "Enter") connect(); });
+$("createDataset").addEventListener("click", createDataset);
+$("runSearch").addEventListener("click", runSearch);
+$("q").addEventListener("keydown", (e) => { if (e.key === "Enter") runSearch(); });
+$("createKey").addEventListener("click", createKey);
+$("saveTenant").addEventListener("click", saveTenant);
+$("resetTenant").addEventListener("click", () => editTenant(null));
+$("tenantSelect").addEventListener("change", switchTenant);
+for (const b of document.querySelectorAll("#tabs button")) b.addEventListener("click", () => showTab(b.dataset.tab));
+for (const n of document.querySelectorAll("[data-role]")) n.classList.add("hidden");
+const saved = load("rag.key");
+if (saved) { $("key").value = saved; connect(); }
+</script>
+</body>
+</html>

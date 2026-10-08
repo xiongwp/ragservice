@@ -1,0 +1,5 @@
+# One question per line. "expect": phrases a correct chunk contains (any one makes a record relevant;
+# recall counts how many of them were found). Or "expect_docs": file names, when any chunk of the file will do.
+{"id": "leave-10y", "query": "工龄满十年年假有几天", "expect": ["年假为十天"]}
+{"id": "reimburse-hotel", "query": "出差住酒店每晚能报多少", "expect": ["每晚不超过 500 元"]}
+{"id": "vpn-download", "query": "VPN 客户端在哪里下载", "expect_docs": ["it-guide.html"]}
